@@ -25,6 +25,7 @@ const punch = (creep, targets) => {
  * - 2x tank: 4 tough, 4 melee, 8 move
  * - 6x ranger: 4 ranged attack, 4 move
  * - 6x healer: 4 heal, 4 move
+ * TODO: Enemy doesnt move -> reform goon squad and collect items, then attack
  */
 export function loop() {
     // Variables that can change per tick
@@ -84,8 +85,9 @@ export function loop() {
         goonSquad[3].moveTo(goonSquad[3].path);
     } else {
         for (const goon of goonSquad) {
-            if (getRange(goon, goon.path) > 0) goon.moveTo(goon.path.x, goon.path.y);
-            else if (goon.role === 'healer') {
+            if (getRange(goon, goon.path) > 0) {
+                goon.moveTo(goon.path.x, goon.path.y);
+            } else if (goon.role === 'healer') {
                 heal(goon, myWoundedCreeps);
             } else if (goon.role === 'ranger') {
                 shoot(goon, targets);
