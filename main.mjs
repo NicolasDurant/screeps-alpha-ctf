@@ -1,4 +1,4 @@
-import {findClosestByRange, findInRange, getObjectsByPrototype, getRange, getTicks} from '/game/utils';
+import {findClosestByRange, getObjectsByPrototype, getRange, getTicks} from '/game/utils';
 import {Creep, Flag, StructureTower} from '/game/prototypes';
 import {HEAL, RANGED_ATTACK} from '/game/constants';
 
@@ -6,18 +6,18 @@ let healers = [], rangers = [], tanks = [], goonSquad = [];
 let tower, myFlag, enemyFlag, direction;
 
 const heal = (creep, damagedCreeps) => {
-    let target = findInRange(creep, damagedCreeps);
+    let target = findClosestByRange(creep, damagedCreeps);
     creep.heal(target);
 };
 
 const shoot = (creep, targets) => {
-    let target = findInRange(creep, targets);
+    let target = findClosestByRange(creep, targets);
     creep.rangedAttack(target);
 };
 
-const punch = (creep, targets) => {
-    let target = findInRange(creep, targets);
-    creep.attack(target);
+const attack = (attacker, targets) => {
+    let target = findClosestByRange(attacker, targets);
+    attacker.attack(target);
 };
 
 /**
@@ -29,14 +29,14 @@ const punch = (creep, targets) => {
  */
 export function loop() {
     // Variables that can change per tick
-    const myCreeps = getObjectsByPrototype(Creep).filter(object => object.my);
-    const targets = getObjectsByPrototype(Creep).filter(c => !c.my);
-    const myWoundedCreeps = myCreeps.filter(object => object.hits < object.hitsMax);
+    let myCreeps = getObjectsByPrototype(Creep).filter(object => object.my);
+    let targets = getObjectsByPrototype(Creep).filter(c => !c.my);
+    let myWoundedCreeps = myCreeps.filter(object => object.hits < object.hitsMax);
     // ONCE: Useful initialisations
     if(getTicks() === 1) {
         myFlag = getObjectsByPrototype(Flag).find(object => object.my);
         enemyFlag = getObjectsByPrototype(Flag).find(object => !object.my);
-        tower = getObjectsByPrototype(StructureTower).filter(object => object.my);
+        tower = getObjectsByPrototype(StructureTower).find(object => object.my);
         direction = myFlag.x === 2 && myFlag.y === 2 ? 1 : -1;
         // ONCE: Distribute roles
         for (const creep of myCreeps) {
@@ -92,7 +92,7 @@ export function loop() {
             } else if (goon.role === 'ranger') {
                 shoot(goon, targets);
             } else if (goon.role === 'tank') {
-                punch(goon, targets);
+                attack(goon, targets);
             }
         }
     }
@@ -108,9 +108,6 @@ export function loop() {
     for (const creep of tanks) {
         creep.moveTo(enemyFlag);
     }
-    // Tower shoot
-    const closestTarget = findClosestByRange(tower, targets);
-    if (closestTarget) {
-        tower.attack(closestTarget);
-    }
+    // Tower attack closest target
+    attack(tower, targets)
 }
