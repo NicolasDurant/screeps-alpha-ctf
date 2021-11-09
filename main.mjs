@@ -1,4 +1,4 @@
-import {findClosestByRange, getObjectsByPrototype, getRange, getTicks} from '/game/utils';
+import {findClosestByRange, findInRange, getObjectsByPrototype, getRange, getTicks} from '/game/utils';
 import {Creep, Flag, StructureTower} from '/game/prototypes';
 import {HEAL, RANGED_ATTACK} from '/game/constants';
 
@@ -7,17 +7,21 @@ let tower, myFlag, enemyFlag, direction;
 
 const heal = (creep, damagedCreeps) => {
     let target = findClosestByRange(creep, damagedCreeps);
-    creep.heal(target);
+    return creep.heal(target);
 };
 
 const shoot = (creep, targets) => {
-    let target = findClosestByRange(creep, targets);
-    creep.rangedAttack(target);
+    let targetsInRange = findInRange(creep, targets, 3);
+    if (targetsInRange.length >= 3) {
+        return creep.rangedMassAttack();
+    } else if (targetsInRange.length > 0) {
+        return creep.rangedAttack(targetsInRange[0]);
+    }
 };
 
 const attack = (attacker, targets) => {
     let target = findClosestByRange(attacker, targets);
-    attacker.attack(target);
+    return attacker.attack(target);
 };
 
 /**
@@ -33,7 +37,7 @@ export function loop() {
     let targets = getObjectsByPrototype(Creep).filter(c => !c.my);
     let myWoundedCreeps = myCreeps.filter(object => object.hits < object.hitsMax);
     // ONCE: Useful initialisations
-    if(getTicks() === 1) {
+    if (getTicks() === 1) {
         myFlag = getObjectsByPrototype(Flag).find(object => object.my);
         enemyFlag = getObjectsByPrototype(Flag).find(object => !object.my);
         tower = getObjectsByPrototype(StructureTower).find(object => object.my);
@@ -98,15 +102,27 @@ export function loop() {
     }
     // Healer creeps
     for (const creep of healers) {
-        creep.moveTo(enemyFlag);
+        if(heal(creep, myWoundedCreeps) !== 0) {
+            creep.moveTo(enemyFlag);
+        }
     }
-    // Healer creeps
+    // Ranger creeps
     for (const creep of rangers) {
-        creep.moveTo(enemyFlag);
+        let keeper = targets.filter(t => t.x === enemyFlag.x && t.y === enemyFlag.y)
+        if (keeper.length > 0 && findInRange(creep, keeper, 3).length > 0) {
+            shoot(creep, keeper)
+        } else {
+            creep.moveTo(enemyFlag);
+        }
     }
-    // Healer creeps
+    // Tank creeps
     for (const creep of tanks) {
-        creep.moveTo(enemyFlag);
+        let keeper = targets.filter(t => t.x === enemyFlag.x && t.y === enemyFlag.y)
+        if (keeper.length > 0 && findInRange(creep, keeper, 1).length > 0) {
+            attack(creep, keeper)
+        } else {
+            creep.moveTo(enemyFlag);
+        }
     }
     // Tower attack closest target
     attack(tower, targets)
