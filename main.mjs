@@ -69,6 +69,31 @@ const krakatower = (tower, targets) => {
     }
 };
 
+const underAttackAndNotHome = () => {
+    for (let i = 0; i < ninjas.length; i++) {
+        const ninja = ninjas[i];
+        if (ninja.hits === undefined) {
+            ninjas.splice(i, 1);
+            continue;
+        }
+        if (ninja.role === 'healer' && ninja.hits < ninja.hitsMax && getRange(ninja, myFlag) > 3) {
+            return true
+        }
+    }
+    return false;
+};
+
+const enemyFlagUndefended = (targets) => {
+    for (let i = 0; i < targets.length; i++) {
+        let target = targets[i];
+        let range = getRange(target, enemyFlag);
+        if (range < 10) {
+            return false;
+        }
+    }
+    return true;
+};
+
 /**
  * CTF Notes:
  * - 2x tank: 4 tough, 4 melee, 8 move
@@ -147,7 +172,7 @@ export function loop() {
         }
     }
     // NINJA SQUAD commands
-    if (getTicks() > 1000) {
+    if (getTicks() > 1400 || enemyFlagUndefended(targets)) {
         let keeper = targets.filter(t => t.x === enemyFlag.x && t.y === enemyFlag.y);
         for (let i = 0; i < ninjas.length; i++) {
             const ninja = ninjas[i];
@@ -172,6 +197,15 @@ export function loop() {
                     ninja.moveTo(enemyFlag);
                 }
             }
+        }
+    } else if (underAttackAndNotHome()) {
+        for (let i = 0; i < ninjas.length; i++) {
+            const ninja = ninjas[i];
+            if (ninja.hits === undefined) {
+                ninjas.splice(i, 1);
+                continue;
+            }
+            ninja.moveTo(myFlag);
         }
     } else {
         for (let i = 0; i < ninjas.length; i++) {
@@ -200,6 +234,9 @@ export function loop() {
         goonSquad[0].moveTo(goonSquad[0].path);
         goonSquad[1].moveTo(goonSquad[1].path);
         goonSquad[2].moveTo(goonSquad[2].path);
+    } else if (getTicks() >= 1600 || myCreeps.length - 6 > targets.length) {
+        ninjas.push(...goonSquad);
+        goonSquad = [];
     } else {
         for (let i = 0; i < goonSquad.length; i++) {
             const goon = goonSquad[i];
@@ -219,7 +256,15 @@ export function loop() {
         }
     }
     // BAIT SQUAD commands
-    if (getTicks() >= 50) {
+    if (getTicks() >= 1600 || myCreeps.length - 6 > targets.length) {
+        if (bait.length > 0 && bait[0].hits === undefined) {
+            bait.pop();
+        } else {
+            if (getRange(bait[0], myFlag) > 0) {
+                bait[0].moveTo(myFlag);
+            }
+        }
+    } else if (getTicks() >= 50) {
         if (bait.length > 0 && bait[0].hits === undefined) {
             bait.pop();
         } else if (bait.length > 0) {
