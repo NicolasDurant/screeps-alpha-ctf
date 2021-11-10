@@ -2,12 +2,16 @@ import {findClosestByRange, findInRange, getObjectsByPrototype, getRange, getTic
 import {Creep, Flag, StructureTower} from '/game/prototypes';
 import {HEAL, RANGED_ATTACK} from '/game/constants';
 
-let healers = [], rangers = [], tanks = [], goonSquad = [];
+let healers = [], rangers = [], tanks = [], goonSquad = [], ninjas = [], bait = [], nirvana = {x: 20, y: 80};
 let tower, myFlag, enemyFlag, direction;
 
 const heal = (creep, damagedCreeps) => {
     let target = findClosestByRange(creep, damagedCreeps);
-    return creep.heal(target);
+    if (getRange(creep, target) === 1) {
+        return creep.heal(target);
+    } else {
+        return creep.rangedHeal(target);
+    }
 };
 
 const shoot = (creep, targets) => {
@@ -22,6 +26,33 @@ const shoot = (creep, targets) => {
 const attack = (attacker, targets) => {
     let target = findClosestByRange(attacker, targets);
     return attacker.attack(target);
+};
+
+const patrol = (creep, a, b, opts = null) => {
+    if (creep.path.x === a.x && creep.path.y === a.y) {
+        creep.moveTo(a, opts);
+        if (creep.x === a.x && creep.y === a.y) {
+            creep.path = b
+        }
+    } else if (creep.path.x === b.x && creep.path.y === b.y) {
+        creep.moveTo(b, opts);
+        if (creep.x === b.x && creep.y === b.y) {
+            creep.path = a
+        }
+    } else {
+        throw Error('Neither A or B are represented in the creeps.path property!')
+    }
+};
+
+const krakatower = (tower, targets) => {
+    let target = findClosestByRange(tower, targets);
+    let range = getRange(tower, target);
+    let energy = tower.store.energy;
+    if (energy === 50 && range <= 50) {
+        return tower.attack(target);
+    } else if (range <= 5) {
+        return tower.attack(target);
+    }
 };
 
 /**
@@ -60,33 +91,79 @@ export function loop() {
                 tanks.push(creep);
             }
         }
+        // GOON SQUAD is the defensive formation
         // ONCE: Move healers to goon squad and specify pathing
-        if (goonSquad.length < 2) {
-            healers[0].path = {x: myFlag.x + direction, y: myFlag.y};
-            healers[1].path = {x: myFlag.x, y: myFlag.y + direction};
-            goonSquad.push(healers[0], healers[1]);
-            healers.splice(0, 2);
+        if (goonSquad.length < 3) {
+            healers[0].path = {x: tower.x + (-direction), y: tower.y + (-direction)};
+            healers[1].path = {x: tower.x + (-direction), y: tower.y + (-direction) * 3};
+            healers[2].path = {x: tower.x + (-direction) * 3, y: tower.y + (-direction)};
+            goonSquad.push(healers[0], healers[1], healers[2]);
+            healers.splice(0, 3);
         }
         // ONCE: Move rangers to goon squad and specify pathing
-        if (goonSquad.length < 6) {
-            rangers[0].path = {x: myFlag.x, y: myFlag.y + (-direction)};
-            rangers[1].path = {x: myFlag.x + (-direction), y: myFlag.y};
-            rangers[2].path = {x: myFlag.x + (-direction), y: myFlag.y + direction};
-            rangers[3].path = {x: myFlag.x + direction, y: myFlag.y + (-direction)};
-            goonSquad.push(rangers[0], rangers[1], rangers[2], rangers[3]);
-            rangers.splice(0, 4);
+        if (goonSquad.length < 9) {
+            rangers[0].path = {x: tower.x, y: tower.y + (-direction)};
+            rangers[1].path = {x: tower.x, y: tower.y + (-direction) * 2};
+            rangers[2].path = {x: tower.x, y: tower.y + (-direction) * 3};
+            rangers[3].path = {x: tower.x + (-direction), y: tower.y};
+            rangers[4].path = {x: tower.x + (-direction) * 2, y: tower.y};
+            rangers[5].path = {x: tower.x + (-direction) * 3, y: tower.y};
+            goonSquad.push(rangers[0], rangers[1], rangers[2], rangers[3], rangers[4], rangers[5]);
+            rangers.splice(0, 6);
         }
-        // ONCE: Move tank to goon squad and specify pathing
-        if (goonSquad.length < 7) {
-            tanks[0].path = {x: myFlag.x + direction, y: myFlag.y + direction};
-            goonSquad.push(tanks[0]);
+        // NINJA SQUAD is the offensive formation that goes for an attempt of the flag
+        // ONCE: Move tank to ninja squad and specify pathing
+        if (ninjas.length < 1) {
+            tanks[0].path = nirvana;
+            healers[0].path = tanks[0];
+            healers[1].path = tanks[0];
+            healers[2].path = tanks[0];
+            ninjas.push(tanks[0], healers[0], healers[1], healers[2]);
+            tanks.splice(0, 1);
+            healers.splice(0, 3);
+        }
+        // BAIT is a tank that will draw fire for the defensive squad
+        // ONCE: Move tank to bait squad and specify pathing
+        if (bait.length < 1) {
+            tanks[0].path = {x: tower.x + (-direction) * 3, y: tower.y + direction};
+            bait.push(tanks[0]);
             tanks.splice(0, 1);
         }
     }
-    // Command Goon-Squad
-    if (getTicks() <= 50) {
+    // NINJA SQUAD commands
+    if (getTicks() > 1000) {
+        let keeper = targets.filter(t => t.x === enemyFlag.x && t.y === enemyFlag.y);
+        for (const ninja of ninjas) {
+            if (ninja.role === 'healer') {
+                if (heal(ninja, myWoundedCreeps) !== 0) {
+                    ninja.moveTo(enemyFlag);
+                }
+            } else if (ninja.role === 'ranger') {
+                if (keeper.length > 0 && findInRange(ninja, keeper, 3).length > 0) {
+                    shoot(ninja, keeper)
+                } else {
+                    ninja.moveTo(enemyFlag);
+                }
+            } else if (ninja.role === 'tank') {
+                if (keeper.length > 0 && findInRange(ninja, keeper, 1).length > 0) {
+                    attack(ninja, keeper)
+                } else {
+                    ninja.moveTo(enemyFlag);
+                }
+            }
+        }
+    } else {
+        for (const ninja of ninjas) {
+            if (getRange(ninja, ninja.path) > 0) {
+                ninja.moveTo(ninja.path.x, ninja.path.y);
+            }
+        }
+    }
+    // GOON SQUAD commands
+    if (getTicks() <= 25) {
+        goonSquad[0].moveTo(goonSquad[0].path);
+        goonSquad[1].moveTo(goonSquad[1].path);
         goonSquad[2].moveTo(goonSquad[2].path);
-        goonSquad[3].moveTo(goonSquad[3].path);
     } else {
         for (const goon of goonSquad) {
             if (getRange(goon, goon.path) > 0) {
@@ -100,30 +177,18 @@ export function loop() {
             }
         }
     }
-    // Healer creeps
-    for (const creep of healers) {
-        if(heal(creep, myWoundedCreeps) !== 0) {
-            creep.moveTo(enemyFlag);
-        }
-    }
-    // Ranger creeps
-    for (const creep of rangers) {
-        let keeper = targets.filter(t => t.x === enemyFlag.x && t.y === enemyFlag.y)
-        if (keeper.length > 0 && findInRange(creep, keeper, 3).length > 0) {
-            shoot(creep, keeper)
+    // BAIT SQUAD commands
+    if (getTicks() >= 50) {
+        let enemy = findInRange(bait[0], targets, 1);
+        if (enemy.length > 0) {
+            bait[0].attack(enemy[0])
         } else {
-            creep.moveTo(enemyFlag);
+            patrol(bait[0], {x: tower.x + (-direction) * 3, y: tower.y + direction}, {
+                x: tower.x + direction,
+                y: tower.y + (-direction) * 3
+            }, {swampCost: 0, plainCost: 5, reusePath: true});
         }
     }
-    // Tank creeps
-    for (const creep of tanks) {
-        let keeper = targets.filter(t => t.x === enemyFlag.x && t.y === enemyFlag.y)
-        if (keeper.length > 0 && findInRange(creep, keeper, 1).length > 0) {
-            attack(creep, keeper)
-        } else {
-            creep.moveTo(enemyFlag);
-        }
-    }
-    // Tower attack closest target
-    attack(tower, targets)
+    // Tower attack closest target with maximum BOOM
+    krakatower(tower, targets)
 }
