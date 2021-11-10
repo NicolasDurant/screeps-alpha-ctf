@@ -32,7 +32,7 @@ const attack = (creep, targets) => {
 };
 
 const search = (creep, bodyParts) => {
-    if (creep.hits === undefined) return;
+    if (creep.hits === undefined || bodyParts.length === 0) return;
     let target = findClosestByRange(creep, bodyParts);
     let range = getRange(creep, target);
     if (range <= 10) {
