@@ -1,13 +1,14 @@
 import {findClosestByRange, findInRange, getObjectsByPrototype, getRange, getTicks} from '/game/utils';
-import {Creep, Flag, StructureTower} from '/game/prototypes';
+import {BodyPart, Creep, Flag, StructureTower} from '/game/prototypes';
 import {HEAL, RANGED_ATTACK} from '/game/constants';
 
 let healers = [], rangers = [], tanks = [], goonSquad = [], ninjas = [], bait = [], nirvana = {x: 20, y: 80};
-let tower, myFlag, enemyFlag, direction;
+let tower, myFlag, enemyFlag, direction, towerPath;
 
 const heal = (creep, damagedCreeps) => {
+    if (creep.hits === undefined) return;
     let target = findClosestByRange(creep, damagedCreeps);
-    if (getRange(creep, target) === 1) {
+    if (target && getRange(creep, target) === 1) {
         return creep.heal(target);
     } else {
         return creep.rangedHeal(target);
@@ -15,6 +16,7 @@ const heal = (creep, damagedCreeps) => {
 };
 
 const shoot = (creep, targets) => {
+    if (creep.hits === undefined) return;
     let targetsInRange = findInRange(creep, targets, 3);
     if (targetsInRange.length >= 3) {
         return creep.rangedMassAttack();
@@ -23,12 +25,23 @@ const shoot = (creep, targets) => {
     }
 };
 
-const attack = (attacker, targets) => {
-    let target = findClosestByRange(attacker, targets);
-    return attacker.attack(target);
+const attack = (creep, targets) => {
+    if (creep.hits === undefined) return;
+    let target = findClosestByRange(creep, targets);
+    return creep.attack(target);
+};
+
+const search = (creep, bodyParts) => {
+    if (creep.hits === undefined) return;
+    let target = findClosestByRange(creep, bodyParts);
+    let range = getRange(creep, target);
+    if (range <= 10) {
+        creep.path = target;
+    }
 };
 
 const patrol = (creep, a, b, opts = null) => {
+    if (creep.hits === undefined) return;
     if (creep.path.x === a.x && creep.path.y === a.y) {
         creep.moveTo(a, opts);
         if (creep.x === a.x && creep.y === a.y) {
@@ -45,6 +58,7 @@ const patrol = (creep, a, b, opts = null) => {
 };
 
 const krakatower = (tower, targets) => {
+    if (tower.hits === undefined) return;
     let target = findClosestByRange(tower, targets);
     let range = getRange(tower, target);
     let energy = tower.store.energy;
@@ -66,12 +80,14 @@ export function loop() {
     // Variables that can change per tick
     let myCreeps = getObjectsByPrototype(Creep).filter(object => object.my);
     let targets = getObjectsByPrototype(Creep).filter(c => !c.my);
+    let bodyParts = getObjectsByPrototype(BodyPart);
     let myWoundedCreeps = myCreeps.filter(object => object.hits < object.hitsMax);
     // ONCE: Useful initialisations
     if (getTicks() === 1) {
         myFlag = getObjectsByPrototype(Flag).find(object => object.my);
         enemyFlag = getObjectsByPrototype(Flag).find(object => !object.my);
         tower = getObjectsByPrototype(StructureTower).find(object => object.my);
+        towerPath = tower;
         direction = myFlag.x === 2 && myFlag.y === 2 ? 1 : -1;
         // ONCE: Distribute roles
         for (const creep of myCreeps) {
@@ -133,7 +149,12 @@ export function loop() {
     // NINJA SQUAD commands
     if (getTicks() > 1000) {
         let keeper = targets.filter(t => t.x === enemyFlag.x && t.y === enemyFlag.y);
-        for (const ninja of ninjas) {
+        for (let i = 0; i < ninjas.length; i++) {
+            const ninja = ninjas[i];
+            if (ninja.hits === undefined) {
+                ninjas.splice(i, 1);
+                continue;
+            }
             if (ninja.role === 'healer') {
                 if (heal(ninja, myWoundedCreeps) !== 0) {
                     ninja.moveTo(enemyFlag);
@@ -153,9 +174,24 @@ export function loop() {
             }
         }
     } else {
-        for (const ninja of ninjas) {
-            if (getRange(ninja, ninja.path) > 0) {
-                ninja.moveTo(ninja.path.x, ninja.path.y);
+        for (let i = 0; i < ninjas.length; i++) {
+            const ninja = ninjas[i];
+            if (ninja.hits === undefined) {
+                ninjas.splice(i, 1);
+                continue;
+            }
+            if (ninja.role === 'healer') {
+                if (getRange(ninja, ninja.path) > 2) {
+                    ninja.moveTo(ninja.path.x, ninja.path.y);
+                } else {
+                    heal(ninja, myWoundedCreeps);
+                }
+            } else if (ninja.role === 'tank') {
+                if (getRange(ninja, ninja.path) > 0) {
+                    ninja.moveTo(ninja.path.x, ninja.path.y);
+                } else {
+                    search(ninja, bodyParts);
+                }
             }
         }
     }
@@ -165,7 +201,12 @@ export function loop() {
         goonSquad[1].moveTo(goonSquad[1].path);
         goonSquad[2].moveTo(goonSquad[2].path);
     } else {
-        for (const goon of goonSquad) {
+        for (let i = 0; i < goonSquad.length; i++) {
+            const goon = goonSquad[i];
+            if (goon.hits === undefined) {
+                goonSquad.splice(i, 1);
+                continue;
+            }
             if (getRange(goon, goon.path) > 0) {
                 goon.moveTo(goon.path.x, goon.path.y);
             } else if (goon.role === 'healer') {
@@ -179,14 +220,18 @@ export function loop() {
     }
     // BAIT SQUAD commands
     if (getTicks() >= 50) {
-        let enemy = findInRange(bait[0], targets, 1);
-        if (enemy.length > 0) {
-            bait[0].attack(enemy[0])
-        } else {
-            patrol(bait[0], {x: tower.x + (-direction) * 3, y: tower.y + direction}, {
-                x: tower.x + direction,
-                y: tower.y + (-direction) * 3
-            }, {swampCost: 0, plainCost: 5, reusePath: true});
+        if (bait.length > 0 && bait[0].hits === undefined) {
+            bait.pop();
+        } else if (bait.length > 0) {
+            let enemy = findInRange(bait[0], targets, 1);
+            if (enemy.length > 0) {
+                bait[0].attack(enemy[0])
+            } else {
+                patrol(bait[0], {x: towerPath.x + (-direction) * 3, y: towerPath.y + direction}, {
+                    x: towerPath.x + direction,
+                    y: towerPath.y + (-direction) * 3
+                }, {swampCost: 0, plainCost: 5, reusePath: true});
+            }
         }
     }
     // Tower attack closest target with maximum BOOM
