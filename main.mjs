@@ -1,6 +1,6 @@
 import {findClosestByRange, findInRange, getObjectsByPrototype, getRange, getTicks} from '/game/utils';
 import {BodyPart, Creep, Flag, StructureTower} from '/game/prototypes';
-import {HEAL, RANGED_ATTACK} from '/game/constants';
+import {HEAL, RANGED_ATTACK, ERR_NOT_IN_RANGE, ERR_INVALID_TARGET} from '/game/constants';
 
 let healers = [], rangers = [], tanks = [], goonSquad = [], ninjas = [], bait = [], nirvana = {x: 20, y: 80};
 let tower, myFlag, enemyFlag, direction, towerPath;
@@ -20,7 +20,7 @@ const shoot = (creep, targets) => {
     let targetsInRange = findInRange(creep, targets, 3);
     if (targetsInRange.length >= 3) {
         return creep.rangedMassAttack();
-    } else if (targetsInRange.length > 0) {
+    } else {
         return creep.rangedAttack(targetsInRange[0]);
     }
 };
@@ -58,7 +58,7 @@ const patrol = (creep, a, b, opts = null) => {
 };
 
 const krakatower = (tower, targets) => {
-    if (tower.hits === undefined) return;
+    if (tower.hits === undefined || targets.length === 0) return;
     let target = findClosestByRange(tower, targets);
     let range = getRange(tower, target);
     let energy = tower.store.energy;
@@ -92,6 +92,17 @@ const enemyFlagUndefended = (targets) => {
         }
     }
     return true;
+};
+
+const myFlagsAttacker = (targets) => {
+    for (let i = 0; i < targets.length; i++) {
+        let target = targets[i];
+        let range = getRange(target, myFlag);
+        if (range < 10) {
+            return target;
+        }
+    }
+    return false;
 };
 
 /**
@@ -172,7 +183,7 @@ export function loop() {
         }
     }
     // NINJA SQUAD commands
-    if (getTicks() > 1400 || enemyFlagUndefended(targets)) {
+    if (enemyFlagUndefended(targets) && getTicks() > 100 || getTicks() > 1100 || myCreeps.length - 5 > targets.length) {
         let keeper = targets.filter(t => t.x === enemyFlag.x && t.y === enemyFlag.y);
         for (let i = 0; i < ninjas.length; i++) {
             const ninja = ninjas[i];
@@ -182,7 +193,11 @@ export function loop() {
             }
             if (ninja.role === 'healer') {
                 if (heal(ninja, myWoundedCreeps) !== 0) {
-                    ninja.moveTo(enemyFlag);
+                    if (ninjas[0].role === 'tank') {
+                        ninja.moveTo(ninjas[0]);
+                    } else {
+                        ninja.moveTo(enemyFlag);
+                    }
                 }
             } else if (ninja.role === 'ranger') {
                 if (keeper.length > 0 && findInRange(ninja, keeper, 3).length > 0) {
@@ -193,6 +208,8 @@ export function loop() {
             } else if (ninja.role === 'tank') {
                 if (keeper.length > 0 && findInRange(ninja, keeper, 1).length > 0) {
                     attack(ninja, keeper)
+                } else if (findInRange(ninja, ninjas, 1).length < 2) {
+
                 } else {
                     ninja.moveTo(enemyFlag);
                 }
@@ -216,13 +233,13 @@ export function loop() {
             }
             if (ninja.role === 'healer') {
                 if (getRange(ninja, ninja.path) > 2) {
-                    ninja.moveTo(ninja.path.x, ninja.path.y);
+                    ninja.moveTo(ninja.path.x, ninja.path.y, {swampCost: 0, plainCost: 5});
                 } else {
                     heal(ninja, myWoundedCreeps);
                 }
             } else if (ninja.role === 'tank') {
                 if (getRange(ninja, ninja.path) > 0) {
-                    ninja.moveTo(ninja.path.x, ninja.path.y);
+                    ninja.moveTo(ninja.path.x, ninja.path.y, {swampCost: 0, plainCost: 5, reusePath: true});
                 } else {
                     search(ninja, bodyParts);
                 }
@@ -234,9 +251,34 @@ export function loop() {
         goonSquad[0].moveTo(goonSquad[0].path);
         goonSquad[1].moveTo(goonSquad[1].path);
         goonSquad[2].moveTo(goonSquad[2].path);
-    } else if (getTicks() >= 1600 || myCreeps.length - 6 > targets.length) {
-        ninjas.push(...goonSquad);
-        goonSquad = [];
+    } else if (getTicks() >= 1000 || myCreeps.length - 5 > targets.length) {
+        let potentialTarget = myFlagsAttacker(targets);
+        if (potentialTarget) {
+            for (let i = 0; i < goonSquad.length; i++) {
+                const goon = goonSquad[i];
+                if (goon.hits === undefined) {
+                    goonSquad.splice(i, 1);
+                    continue;
+                }
+                if (goon.role === 'healer') {
+                    if (heal(goon, myWoundedCreeps) === ERR_NOT_IN_RANGE) {
+                        goon.moveTo(potentialTarget);
+                    }
+                } else if (goon.role === 'ranger') {
+                    let shot = shoot(goon, targets)
+                    if (shot === ERR_NOT_IN_RANGE || shot === ERR_INVALID_TARGET) {
+                        goon.moveTo(potentialTarget);
+                    }
+                } else if (goon.role === 'tank') {
+                    if (attack(goon, targets) === ERR_NOT_IN_RANGE) {
+                        goon.moveTo(potentialTarget);
+                    }
+                }
+            }
+        } else {
+            ninjas.push(...goonSquad);
+            goonSquad = [];
+        }
     } else {
         for (let i = 0; i < goonSquad.length; i++) {
             const goon = goonSquad[i];
@@ -256,12 +298,14 @@ export function loop() {
         }
     }
     // BAIT SQUAD commands
-    if (getTicks() >= 1600 || myCreeps.length - 6 > targets.length) {
+    if (getTicks() >= 1600 || myCreeps.length - 5 > targets.length) {
         if (bait.length > 0 && bait[0].hits === undefined) {
             bait.pop();
         } else {
             if (getRange(bait[0], myFlag) > 0) {
                 bait[0].moveTo(myFlag);
+            } else {
+                attack(bait[0], targets);
             }
         }
     } else if (getTicks() >= 50) {
