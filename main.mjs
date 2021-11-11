@@ -213,7 +213,7 @@ export function loop() {
                 if (keeper.length > 0 && findInRange(ninja, keeper, 1).length > 0) {
                     attack(ninja, keeper)
                 } else if (attack(ninja, targets) === ERR_NOT_IN_RANGE || attack(ninja, targets) === ERR_INVALID_TARGET) {
-                    if (findInRange(ninja, ninjas, 6).length < myCreeps.length - 2 && getTicks() > 1600) {
+                    if (findInRange(ninja, ninjas, 10).length < myCreeps.length - 2 && getTicks() > 1600) {
 
                     } else if (findInRange(ninja, ninjas, 1).length < 2 && getTicks() < 1600) {
 
