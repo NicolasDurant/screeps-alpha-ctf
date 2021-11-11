@@ -223,7 +223,7 @@ export function loop() {
                 }
             }
         }
-    } else if (underAttackAndNotHome()) {
+    } else if (underAttackAndNotHome() && getTicks() < 100) {
         for (let i = 0; i < ninjas.length; i++) {
             const ninja = ninjas[i];
             if (ninja.hits === undefined) {
